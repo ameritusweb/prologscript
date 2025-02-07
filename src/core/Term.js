@@ -6,8 +6,9 @@ export class Term {
         this.binding = null;
     }
 
-    isVariable() {
-        return typeof this.value === 'string' && this.value.startsWith('$');
+    _isVariable(term) {
+        return (term instanceof Term && term.isVariable()) || 
+               (typeof term === 'string' && term.startsWith('$'));
     }
 
     isList() {

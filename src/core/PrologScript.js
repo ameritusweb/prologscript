@@ -1,8 +1,7 @@
 // PrologScript.js - Main Library File
 
 import { Reality } from './Reality.js';
-import { Variable } from './Variable.js';
-import { CausalModel } from '../features/causality/CausalModel.js';
+import { Counterfactual } from './Counterfactual.js';
 import { Agent } from '../features/agents/Agent.js';
 import { WaveFunction } from '../features/math/WaveFunction.js';
 
@@ -12,9 +11,13 @@ class PrologScript {
         this.activeReality = null;
         this.universalLaws = new Map();
         this.knowledgeBase = new Map();
-        this.rules = [];
+        this.rules = new Map();
         this.context = new UnificationContext();
         this._initializePredicates();
+        this._initializeMathPredicates();
+        this._initializeWavePredicates();
+        this._initializeUniversalLaws();
+        this._initializeCounterfactualPredicates();
     }
 
     // Reality Management
@@ -71,6 +74,24 @@ class PrologScript {
             throw new Error('No active reality');
         }
         return this.activeReality.evolve(steps);
+    }
+
+     // Enhanced arithmetic with variable support
+    add($X, $Y) {
+        const x = typeof $X === 'string' ? this.context.bindings.get($X.slice(1)) : $X;
+        const y = typeof $Y === 'string' ? this.context.bindings.get($Y.slice(1)) : $Y;
+        return x + y;
+    }
+
+    subtract($X, $Y) {
+        const x = typeof $X === 'string' ? this.context.bindings.get($X.slice(1)) : $X;
+        const y = typeof $Y === 'string' ? this.context.bindings.get($Y.slice(1)) : $Y;
+        return x - y;
+    }
+    // Predicate definition
+    predicate(name, func) {
+        this[name] = func;
+        return true;
     }
 
     _initializePredicates() {
@@ -169,6 +190,281 @@ class PrologScript {
         });
     }
 
+    _initializeMathPredicates() {
+        // Arithmetic operations
+        this.predicate('sum', ($X, $Y, $Z) => {
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            const z = this._resolveValue($Z);
+            return z === x + y;
+        });
+
+        this.predicate('multiply', ($X, $Y, $Z) => {
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            const z = this._resolveValue($Z);
+            return z === x * y;
+        });
+
+        this.predicate('divide', ($X, $Y, $Z) => {
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            const z = this._resolveValue($Z);
+            return y !== 0 && z === x / y;
+        });
+
+        // Comparison predicates
+        this.predicate('greaterThan', ($X, $Y) => {
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            return x > y;
+        });
+
+        this.predicate('lessThan', ($X, $Y) => {
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            return x < y;
+        });
+
+        // Mathematical functions
+        this.predicate('square', ($X, $Y) => {
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            return y === x * x;
+        });
+
+        this.predicate('sqrt', ($X, $Y) => {
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            return x >= 0 && y === Math.sqrt(x);
+        });
+
+        this.predicate('power', ($X, $Y, $Z) => {
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            const z = this._resolveValue($Z);
+            return z === Math.pow(x, y);
+        });
+
+        // Modulo operation
+        this.predicate('mod', ($X, $Y, $Z) => {
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            const z = this._resolveValue($Z);
+            return y !== 0 && z === x % y;
+        });
+
+        // Range constraints
+        this.predicate('between', ($X, $Min, $Max) => {
+            const x = this._resolveValue($X);
+            const min = this._resolveValue($Min);
+            const max = this._resolveValue($Max);
+            return x >= min && x <= max;
+        });
+
+        // Even/Odd predicates
+        this.predicate('isEven', ($X) => {
+            const x = this._resolveValue($X);
+            return x % 2 === 0;
+        });
+
+        this.predicate('isOdd', ($X) => {
+            const x = this._resolveValue($X);
+            return x % 2 === 1;
+        });
+    }
+
+    _initializeWavePredicates() {
+        // Define a wave function
+        this.predicate('defineWave', (name, amplitude, frequency, phase = 0, type = 'sine') => {
+            this.waves.set(name, new WaveFunction(amplitude, frequency, phase, type));
+            return true;
+        });
+
+        // Get height at point
+        this.predicate('waveHeight', (waveName, $X, $Y) => {
+            const wave = this.waves.get(waveName);
+            if (!wave) return false;
+            
+            const x = this._resolveValue($X);
+            const y = this._resolveValue($Y);
+            
+            if (y === null) {
+                // Binding Y to the height at X
+                const height = wave.getValue(x);
+                return this._bindVariable($Y, height);
+            } else {
+                // Verifying if X,Y lies on the wave
+                return Math.abs(wave.getValue(x) - y) < 0.001;
+            }
+        });
+
+        // Find points with specific height
+        this.predicate('findWavePoints', (waveName, $Y, $Solutions) => {
+            const wave = this.waves.get(waveName);
+            if (!wave) return false;
+            
+            const y = this._resolveValue($Y);
+            const solutions = wave.findX(y);
+            return this._bindVariable($Solutions, solutions);
+        });
+
+        // Relate two points on same wave
+        this.predicate('relatedPoints', (waveName, $X1, $Y1, $X2, $Y2, distance) => {
+            const wave = this.waves.get(waveName);
+            if (!wave) return false;
+
+            const x1 = this._resolveValue($X1);
+            const y1 = this._resolveValue($Y1);
+            const x2 = this._resolveValue($X2);
+            const y2 = this._resolveValue($Y2);
+
+            // If X1 and Y1 are known, find X2 and Y2
+            if (x1 !== null && y1 !== null) {
+                if (Math.abs(wave.getValue(x1) - y1) > 0.001) return false;
+                
+                const expectedX2 = x1 + distance;
+                const expectedY2 = wave.getRelatedPoint(x1, distance);
+                
+                return this._bindVariable($X2, expectedX2) && 
+                       this._bindVariable($Y2, expectedY2);
+            }
+            
+            // If X2 and Y2 are known, find X1 and Y1
+            if (x2 !== null && y2 !== null) {
+                if (Math.abs(wave.getValue(x2) - y2) > 0.001) return false;
+                
+                const expectedX1 = x2 - distance;
+                const expectedY1 = wave.getRelatedPoint(x2, -distance);
+                
+                return this._bindVariable($X1, expectedX1) && 
+                       this._bindVariable($Y1, expectedY1);
+            }
+
+            return false;
+        });
+
+        // Find phase difference between points
+        this.predicate('phaseDifference', (waveName, $X1, $X2, $Diff) => {
+            const wave = this.waves.get(waveName);
+            if (!wave) return false;
+            
+            const x1 = this._resolveValue($X1);
+            const x2 = this._resolveValue($X2);
+            
+            const diff = (x2 - x1) * wave.frequency % (2 * Math.PI);
+            return this._bindVariable($Diff, diff);
+        });
+    }
+
+    _initializeCounterfactualPredicates() {
+        // Define causal relationships
+        this.predicate('causes', (cause, effect, mechanism) => {
+            if (!this.causalModel.nodes.has(cause)) {
+                this.causalModel.addNode(cause);
+            }
+            if (!this.causalModel.nodes.has(effect)) {
+                this.causalModel.addNode(effect);
+            }
+            this.causalModel.addCause(cause, effect, mechanism);
+            return true;
+        });
+
+        // Define possible states for a variable
+        this.predicate('stateSpace', (variable, possibleStates) => {
+            if (!this.causalModel.nodes.has(variable)) {
+                this.causalModel.addNode(variable, null, possibleStates);
+            } else {
+                this.causalModel.nodes.get(variable).stateSpace = possibleStates;
+            }
+            return true;
+        });
+
+        // Assert actual state
+        this.predicate('assert', (variable, state) => {
+            if (!this.causalModel.nodes.has(variable)) {
+                this.causalModel.addNode(variable);
+            }
+            this.causalModel.nodes.get(variable).state = state;
+            return true;
+        });
+
+        // Counterfactual intervention
+        this.predicate('intervene', (variable, state) => {
+            this.causalModel.intervene(variable, state);
+            return true;
+        });
+
+        // Query state after intervention
+        this.predicate('queryState', (variable, $State) => {
+            const state = this.causalModel.nodes.get(variable).state;
+            return this._bindVariable($State, state);
+        });
+
+        // Temporal reasoning
+        this.predicate('atTime', (timestamp, variable, state) => {
+            const timeStep = this.timeline.find(t => t.timestamp === timestamp);
+            if (timeStep) {
+                return timeStep.states.get(variable) === state;
+            }
+            return false;
+        });
+
+        // Counterfactual timeline
+        this.predicate('inTimeline', (timeline, variable, $State) => {
+            const state = this.timeline
+                .filter(t => t.timeline === timeline)
+                .find(t => t.states.has(variable))
+                ?.states.get(variable);
+            return this._bindVariable($State, state);
+        });
+    }
+
+    // Create a new counterfactual scenario
+    createCounterfactual(name) {
+        return new Counterfactual(this, name);
+    }
+
+    _resolveValue(value) {
+        if (typeof value === 'string' && value.startsWith('$')) {
+            return this.context.bindings.get(value.slice(1));
+        }
+        return value;
+    }
+
+    // Add constraint to variable
+    addConstraint(varName, operator, value) {
+        const constraint = new MathConstraint(operator, value);
+        this.rules.forEach(rule => {
+            if (rule.variables.has(varName)) {
+                rule.variables.get(varName).addConstraint(value => constraint.evaluate(value));
+            }
+        });
+    }
+
+    // Add mathematical rule
+    addMathRule(head, expression) {
+        this.addRule(head, (context) => {
+            try {
+                return expression(context);
+            } catch (e) {
+                return false;
+            }
+        });
+    }
+
+    // Solve mathematical equation
+    solveEquation(equation, variable, range = { min: -1000, max: 1000 }) {
+        const solutions = [];
+        for (let x = range.min; x <= range.max; x++) {
+            this.context.bindings.set(variable, x);
+            if (equation(this.context)) {
+                solutions.push(x);
+            }
+        }
+        return solutions;
+    }
+
     // Enhanced unification with occurs check
     unify(term1, term2) {
         const t1 = this._resolveTerm(term1);
@@ -196,28 +492,144 @@ class PrologScript {
         return t1.value === t2.value;
     }
 
-    // Backtracking query system
     query(goal, ...args) {
         if (!this.activeReality) {
             throw new Error('No active reality');
         }
-        
-        const results = [];
+    
+        const queryKey = `${goal}:${args.join(':')}`;
+        const results = new Set();
         this.context = new UnificationContext();
-
+    
+        // 1. Direct fact check
+        for (let [key, value] of this.knowledgeBase) {
+            const bindings = this._matchPattern(queryKey, key);
+            if (bindings) {
+                if (value instanceof Set) {
+                    Array.from(value).forEach(v => results.add(v));
+                } else {
+                    results.add(value);
+                }
+            }
+        }
+    
+        // 2. Rule-based inference with backtracking
         const findSolution = () => {
             if (this._evaluateGoal(goal, args)) {
-                results.push(new Map(this.context.bindings));
+                const solution = new Map(this.context.bindings);
+                results.add(solution);
                 return true;
             }
             return this._backtrack();
         };
+    
+        // Check recursion depth
+        if (this.context.depth >= this.context.maxDepth) {
+            throw new Error('Maximum recursion depth exceeded');
+        }
+        
+        this.context.depth++;
+        
+        try {
+            while (findSolution()) {
+                // Continue finding solutions
+            }
+        } finally {
+            this.context.depth--;
+        }
+    
+        return results.size > 1 ? Array.from(results) : 
+               (results.size === 1 ? Array.from(results)[0] : false);
+    }
 
-        while (findSolution()) {
-            // Continue finding solutions
+    // Core predicates
+    isA(entity, category) {
+        const key = `isA:${category}`;
+        if (!this.knowledgeBase.has(key)) {
+            this.knowledgeBase.set(key, new Set());
+        }
+        this.knowledgeBase.get(key).add(entity);
+        return true;
+    }
+
+    hasA(entity, property, value) {
+        const key = `hasA:${entity}:${property}`;
+        this.knowledgeBase.set(key, value);
+        return true;
+    }
+
+        // Rule definition and inference
+        addRule(head, ...body) {
+            if (!head) throw new Error('Rule head cannot be empty');
+            const ruleKey = typeof head === 'string' ? head : head.toString();
+            if (this.rules.has(ruleKey)) {
+                console.warn(`Overwriting existing rule for ${ruleKey}`);
+            }
+            this.rules.set(ruleKey, body);
+        }
+    
+        infer(query, ...args) {
+            // Direct fact check
+            const directResult = this.query(query, ...args);
+            if (directResult !== null && directResult !== false) {
+                return directResult;
+            }
+    
+            // Rule-based inference
+            for (let [ruleHead, ruleBody] of this.rules) {
+                if (this._matchesRule(query, args, ruleHead)) {
+                    const inferenceResult = this._evaluateRuleBody(ruleBody, args);
+                    if (inferenceResult) {
+                        return true;
+                    }
+                }
+            }
+    
+            return false;
         }
 
-        return results;
+        _matchPattern(pattern, fact) {
+            const patternParts = pattern.split(':');
+            const factParts = fact.split(':');
+            
+            if (patternParts.length !== factParts.length) return false;
+            
+            const bindings = new Map();
+            
+            for (let i = 0; i < patternParts.length; i++) {
+                const patternPart = patternParts[i];
+                const factPart = factParts[i];
+                
+                if (this._isVariable(patternPart)) {
+                    const varName = patternPart.slice(1);
+                    if (bindings.has(varName)) {
+                        if (bindings.get(varName) !== factPart) return false;
+                    } else {
+                        bindings.set(varName, factPart);
+                    }
+                } else if (patternPart !== factPart) {
+                    return false;
+                }
+            }
+            
+            return bindings;
+        }
+
+        _isVariable(term) {
+            return (term instanceof Term && term.isVariable()) || 
+                   (typeof term === 'string' && term.startsWith('$'));
+        }
+
+    _queryIsA(entity, category) {
+        const key = `isA:${category}`;
+        return this.knowledgeBase.has(key) && 
+               this.knowledgeBase.get(key).has(entity);
+    }
+
+    _queryHasA(entity, property) {
+        const key = `hasA:${entity}:${property}`;
+        return this.knowledgeBase.has(key) ? 
+               this.knowledgeBase.get(key) : null;
     }
 
     _backtrack() {
@@ -227,20 +639,25 @@ class PrologScript {
     }
 
     _evaluateGoal(goal, args) {
-        const predicate = this.predicates.get(goal);
-        if (predicate) {
-            return predicate(...args);
+        // Check for predicate as method
+        if (typeof this[goal] === 'function') {
+            return this[goal](...args);
         }
-
-        const rules = this.rules.filter(r => r.head === goal);
+    
+        // Check for rules
+        const rules = Array.from(this.rules.entries())
+            .filter(([head]) => this._matchesRule(goal, args, head));
+    
         if (rules.length > 0) {
-            this.context.addChoicePoint(rules.map(r => ({
-                goal: r.body,
-                args: r.args
+            this.context.addChoicePoint(rules.map(([head, body]) => ({
+                goal: body,
+                args: this._substituteArgs(args, head)
             })));
-            return this._evaluateGoal(rules[0].body, rules[0].args);
+            
+            const [, body] = rules[0];
+            return this._evaluateRuleBody(body, args);
         }
-
+    
         return false;
     }
 
@@ -248,6 +665,29 @@ class PrologScript {
         const resolved = this._resolveTerm(term);
         if (resolved.isVariable()) return null;
         return typeof resolved.value === 'number' ? resolved.value : null;
+    }
+
+    _matchesRule(query, args, ruleHead) {
+        // Implement rule matching logic
+        // This is a simplified version
+        return ruleHead.startsWith(query);
+    }
+
+    _evaluateRuleBody(conditions, context) {
+        return conditions.every(condition => {
+            if (typeof condition === 'function') {
+                return condition(context);
+            }
+            
+            const substitutedCondition = this._substituteVariables(condition, context.bindings);
+            return this.query(...substitutedCondition.split(':'));
+        });
+    }
+
+    _substituteVariables(pattern, bindings) {
+        return pattern.replace(/\$([A-Z][a-zA-Z0-9]*)/g, (_, varName) => {
+            return bindings.get(varName) || `$${varName}`;
+        });
     }
 
     _resolveTerm(term) {
@@ -260,11 +700,24 @@ class PrologScript {
         return new Term(term);
     }
 
-    _bindVariable(var1, var2) {
-        if (this._occursCheck(var1, var2)) return false;
-        var1.binding = var2;
-        this.context.bindings.set(var1.value, var2);
-        return true;
+    _bindVariable(variable, value) {
+        // Case 1: Variable is a Term instance
+        if (variable instanceof Term) {
+            if (this._occursCheck(variable, value)) return false;
+            variable.binding = value;
+            this.context.bindings.set(variable.value, value);
+            return true;
+        }
+        
+        // Case 2: Variable is a string
+        if (typeof variable === 'string' && variable.startsWith('$')) {
+            const varName = variable.slice(1);
+            this.context.bindings.set(varName, value);
+            return true;
+        }
+        
+        // Direct value comparison
+        return variable === value;
     }
 
     _occursCheck(variable, term) {
