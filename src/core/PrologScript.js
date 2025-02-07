@@ -2,6 +2,9 @@
 
 import { Reality } from './Reality.js';
 import { Counterfactual } from './Counterfactual.js';
+import { UniversalLaws } from './UniversalLaws.js';
+import { UnificationContext } from './UnificationContext.js';
+import { Term } from './Term.js';
 import { Agent } from '../features/agents/Agent.js';
 import { WaveFunction } from '../features/math/WaveFunction.js';
 
@@ -9,7 +12,7 @@ class PrologScript {
     constructor() {
         this.realities = new Map();
         this.activeReality = null;
-        this.universalLaws = new Map();
+        this.universalLaws = new UniversalLaws();
         this.knowledgeBase = new Map();
         this.rules = new Map();
         this.context = new UnificationContext();
@@ -272,6 +275,33 @@ class PrologScript {
             const x = this._resolveValue($X);
             return x % 2 === 1;
         });
+    }
+
+    _initializeUniversalLaws() {
+        // Add fundamental universal laws
+        this.universalLaws.addUniversalRule(
+            'conservation_of_energy',
+            (reality) => !reality.facts.get('energy_conservation_violated'),
+            (state, reality) => {
+                // Implementation of energy conservation
+                return state;
+            }
+        );
+
+        this.universalLaws.addUniversalRule(
+            'causality',
+            (reality) => !reality.facts.get('causality_violated'),
+            (state, reality) => {
+                // Basic causality implementation
+                return state;
+            }
+        );
+
+        // Add universal constants
+        this.universalLaws.addConstant('speed_of_light', 299792458);
+        
+        // Add invariant rules that cannot be overridden
+        this.universalLaws.addInvariant('logical_consistency');
     }
 
     _initializeWavePredicates() {

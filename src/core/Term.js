@@ -6,7 +6,7 @@ export class Term {
         this.binding = null;
     }
 
-    _isVariable(term) {
+    isVariable(term) {
         return (term instanceof Term && term.isVariable()) || 
                (typeof term === 'string' && term.startsWith('$'));
     }

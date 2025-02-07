@@ -33,8 +33,8 @@ export class TemporalRule {
     // Get historical effects
     getHistory(startTime, endTime) {
         return Array.from(this.history.entries())
-            .filter(([t, _]) => t >= startTime && t <= endTime)
-            .sort(([t1, _], [t2, _]) => t1 - t2);
+        .filter(([t]) => t >= startTime && t <= endTime)
+        .sort(([t1], [t2]) => t1 - t2);   
     }
 
     // Get effect at specific time
