@@ -7,6 +7,7 @@ import { UnificationContext } from './UnificationContext.js';
 import { Term } from './Term.js';
 import { Agent } from '../features/agents/Agent.js';
 import { WaveFunction } from '../features/math/WaveFunction.js';
+import esprima from 'esprima';
 
 class PrologScript {
     constructor() {
@@ -135,12 +136,45 @@ class PrologScript {
 
         // Arithmetic predicates
         this.predicate('add', ($X, $Y, $Result) => {
-            const x = this._evaluateArithmetic($X);
-            const y = this._evaluateArithmetic($Y);
-            if (x !== null && y !== null) {
-                return this.unify($Result, x + y);
+
+            const xTerm = this._resolveTerm($X);
+            const yTerm = this._resolveTerm($Y);
+            const resultTerm = this._resolveTerm($Result);
+
+            // Create an AST for the expression X + Y
+            const ast = Term.createBinaryOp('+', xTerm, yTerm);
+
+            // If both X and Y are bound, compute the result but preserve the AST
+            if (!xTerm.isVariable() && !yTerm.isVariable()) {
+                const computedValue = xTerm.value + yTerm.value;
+                return this.unify($Result, new Term(computedValue, ast));
             }
-            return false;
+
+            // If Result is bound, solve for X or Y
+            if (!resultTerm.isVariable()) {
+                const computedValue = resultTerm.value;
+                
+                // Solve for X if Y is known
+                if (!yTerm.isVariable()) {
+                    return this.unify($X, new Term(computedValue - yTerm.value, ast));
+                }
+
+                // Solve for Y if X is known
+                if (!xTerm.isVariable()) {
+                    return this.unify($Y, new Term(computedValue - xTerm.value, ast));
+                }
+            }
+
+            this.context.bindings.set("X", xTerm);
+            this.context.bindings.set("Y", yTerm);
+
+            const hashAST = ps._hashAST(ast);
+            const astTerm = new Term(hashAST, ast);
+
+            this.context.bindings.set(hashAST, astTerm);
+
+            // Otherwise, bind the AST to the result variable
+            return this.unify($Result, astTerm);
         });
 
         this.predicate('subtract', ($X, $Y, $Result) => {
@@ -500,6 +534,9 @@ class PrologScript {
         const t1 = this._resolveTerm(term1);
         const t2 = this._resolveTerm(term2);
 
+         // Case 1: If both terms are the same object, they are trivially unified
+        if (t1 === t2) return true;
+
         if (t1.isVariable() && t2.isVariable()) {
             if (t1.value === t2.value) return true;
             return this._bindVariable(t1, t2);
@@ -511,6 +548,20 @@ class PrologScript {
 
         if (t2.isVariable()) {
             return this._bindVariable(t2, t1);
+        }
+
+        // Case 4: If one term is a literal number and the other is an AST,
+        // simply bind the AST term to the literal (we already know they are equal)
+        if (typeof t1.value === "number" && t2.isExpression()) {
+            return this._bindVariable(t2, t1); // Bind AST term to literal
+        }
+        if (typeof t2.value === "number" && t1.isExpression()) {
+            return this._bindVariable(t1, t2); // Bind AST term to literal
+        }
+
+        // Case 5: If both terms have an AST, unify their ASTs as well
+        if (t1.isExpression() && t2.isExpression()) {
+            if (!this._unifyAST(t1.ast, t2.ast)) return false;
         }
 
         if (t1.isList() && t2.isList()) {
@@ -589,6 +640,19 @@ class PrologScript {
             return false;
         }
 
+        // **NEW: Extract Variables from AST and Store Them in Bindings**
+        for (let solution of results.values()) {
+            const resultTerm = solution.get('result');
+            if (resultTerm instanceof Term && resultTerm.ast) {
+                if (resultTerm.ast.left.isVariable()) {
+                    solution.set("X", resultTerm.ast.left);
+                }
+                if (resultTerm.ast.right.isVariable()) {
+                    solution.set("Y", resultTerm.ast.right);
+                }
+            }
+        }
+
         // If query contained variables
         if (args.some(arg => this._isVariable(arg))) {
             return results.size === 1 ? 
@@ -644,6 +708,116 @@ class PrologScript {
             }
     
             return false;
+        }
+
+        ast(expressionLambda) {
+            if (typeof expressionLambda !== "function") {
+                throw new Error("ps.ast() expects a lambda function as input.");
+            }
+        
+            // **Step 1: Convert the function to a string**
+            const functionString = expressionLambda.toString();
+        
+            // **Step 2: Parse the lambda into an AST using Esprima**
+            const parsedAST = this._parseLambdaToAST(functionString);
+        
+            const hashOfParsedAST = this._hashAST(parsedAST);
+
+            // **Step 4: Retrieve the stored AST from bound terms**
+            const termForAST = this.context.bindings.get(hashOfParsedAST);
+        
+            // **Step 5: Compare the Esprima-parsed AST with the stored AST**
+            if (!termForAST) {
+                throw new Error("AST mismatch: The parsed AST does not match the stored AST.");
+            }
+        
+            return termForAST.binding; // Return the computed numeric result
+        }
+
+        _parseLambdaToAST = function(functionString) {
+            // Extract the function body (after `=>`)
+            const bodyMatch = functionString.match(/=>\s*(.*)/);
+            if (!bodyMatch) {
+                throw new Error("Invalid lambda expression.");
+            }
+            const expression = bodyMatch[1].trim();
+        
+            // Use Esprima to parse the expression into an AST
+            const ast = esprima.parseScript(expression).body[0].expression;
+        
+            return this._convertEsprimaAST(ast);
+        }
+
+        _standardizeAST = function(ast) {
+             // Recursively remove unnecessary properties and standardize keys
+    function cleanAST(obj) {
+        if (Array.isArray(obj)) {
+            return obj.map(cleanAST);
+        } else if (obj !== null && typeof obj === "object") {
+            return Object.keys(obj)
+                .sort() // Ensure keys are always in the same order
+                .reduce((acc, key) => {
+                    if (key !== "ast" && key !== "binding") { // Remove dynamic properties
+                        acc[key] = cleanAST(obj[key]);
+                    }
+                    return acc;
+                }, {});
+        }
+        return obj;
+    }
+
+    return cleanAST(ast);
+        }
+        
+        _convertEsprimaAST = function(esprimaAST) {
+            if (esprimaAST.type === "Literal") {
+                return { type: "Literal", value: esprimaAST.value };
+            }
+        
+            if (esprimaAST.type === "Identifier") {
+                return { type: "Variable", name: esprimaAST.name };
+            }
+        
+            if (esprimaAST.type === "BinaryExpression") {
+                return {
+                    type: "BinaryExpression",
+                    operator: esprimaAST.operator,
+                    left: this._convertEsprimaAST(esprimaAST.left),
+                    right: this._convertEsprimaAST(esprimaAST.right)
+                };
+            }
+        
+            // ✅ Handle function calls (e.g., `result.get("X")`)
+            if (esprimaAST.type === "CallExpression") {
+                if (
+                    esprimaAST.callee.type === "MemberExpression" &&
+                    esprimaAST.callee.property.type === "Identifier" &&
+                    esprimaAST.callee.property.name === "get"
+                ) {
+                    // Extract variable name (e.g., `result.get("X")` → "X")
+                    const arg = esprimaAST.arguments[0];
+                    if (arg.type === "Literal" && typeof arg.value === "string") {
+                        return { type: "Variable", name: arg.value };
+                    }
+                }
+            }
+        
+            throw new Error(`Unsupported AST node type: ${esprimaAST.type}`);
+        }        
+
+        _hashAST = function(ast) {
+            const stdAst = this._standardizeAST(ast);
+            const jsonString = JSON.stringify(stdAst);
+            let hash = 0;
+            for (let i = 0; i < jsonString.length; i++) {
+                hash = (hash << 5) - hash + jsonString.charCodeAt(i);
+                hash |= 0;
+            }
+            return `AST_${hash.toString(16)}`; // Convert hash to hex
+        }
+
+        _compareAST = function(ast1, ast2) {
+            return JSON.stringify(ast1) === JSON.stringify(ast2);
         }
 
         _matchPattern(pattern, fact) {
@@ -763,7 +937,10 @@ class PrologScript {
         if (variable instanceof Term) {
             if (this._occursCheck(variable, value)) return false;
             variable.binding = value;
-            this.context.bindings.set(variable.value, value);
+            if (typeof variable.value === "string" && variable.value.startsWith("$")) {
+                const varName = variable.value.slice(1);
+                this.context.bindings.set(varName, value);
+            }
             return true;
         }
         

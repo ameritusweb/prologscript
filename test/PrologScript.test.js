@@ -7,6 +7,28 @@ describe("PrologScript Tests", () => {
         ps = new PrologScript();
     });
 
+    describe("Abstract Syntax Tree", () => {
+        test("AST matching", () => {
+            ps.createReality("Logic3");
+            ps.switchReality("Logic3");
+        
+            const result3 = ps.query("add", "$X", "$Y", 10);
+            
+            // Get AST from bound result
+            const ast = ps.ast(result3.get("X") + result3.get("Y"));
+        
+            // Expected AST structure
+            const expectedAST = {
+                type: "BinaryExpression",
+                operator: "+",
+                left: { type: "Variable", name: "$X" },
+                right: { type: "Variable", name: "$Y" }
+            };
+        
+            expect(ast).toEqual(expectedAST);
+        });
+    });
+
     // Direct Computation Tests
     describe("Direct Computation", () => {
         test("adds two numbers correctly", () => {
@@ -73,12 +95,12 @@ describe("PrologScript Tests", () => {
             
             // Variable binding
             const result1 = ps.query("add", 5, 3, "$Result");
-            expect(result1.get("$Result").value).toBe(8); // This works instead
+            expect(result1.get("Result").value).toBe(8); // This works instead
             
             // Find missing addend
             const result2 = ps.query("add", "$X", 3, 8);
             console.log('res2: ' + typeof result2); // is a boolean
-            expect(result2.get("X")).toBe(5);
+            expect(result2.get("X").value).toBe(5);
             
             // Multiple variables
             const result3 = ps.query("add", "$X", "$Y", 10);
