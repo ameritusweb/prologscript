@@ -80,13 +80,13 @@ class PrologScript {
     }
 
      // Enhanced arithmetic with variable support
-    add($X, $Y) {
+    computeAdd($X, $Y) {
         const x = typeof $X === 'string' ? this.context.bindings.get($X.slice(1)) : $X;
         const y = typeof $Y === 'string' ? this.context.bindings.get($Y.slice(1)) : $Y;
         return x + y;
     }
 
-    subtract($X, $Y) {
+    computeSubtract($X, $Y) {
         const x = typeof $X === 'string' ? this.context.bindings.get($X.slice(1)) : $X;
         const y = typeof $Y === 'string' ? this.context.bindings.get($Y.slice(1)) : $Y;
         return x - y;
@@ -527,8 +527,21 @@ class PrologScript {
             throw new Error('No active reality');
         }
     
+        if (typeof this[goal] === 'function') {
+            this.context.incrementDepth();
+            try {
+                const success = this[goal](...args);
+                if (success && this.context.bindings.size > 0) {
+                    return this.context.getBindings();
+                }
+                return success;
+            } finally {
+                this.context.decrementDepth();
+            }
+        }
+    
         const queryKey = `${goal}:${args.join(':')}`;
-        const results = new Set();
+        const results = new Map();  // Change to Map instead of Set
         this.context = new UnificationContext();
     
         // 1. Direct fact check
@@ -536,9 +549,15 @@ class PrologScript {
             const bindings = this._matchPattern(queryKey, key);
             if (bindings) {
                 if (value instanceof Set) {
-                    Array.from(value).forEach(v => results.add(v));
+                    Array.from(value).forEach(v => {
+                        const solution = new Map(bindings);
+                        solution.set('result', v);
+                        results.set(results.size, solution);
+                    });
                 } else {
-                    results.add(value);
+                    const solution = new Map(bindings);
+                    solution.set('result', value);
+                    results.set(results.size, solution);
                 }
             }
         }
@@ -547,29 +566,38 @@ class PrologScript {
         const findSolution = () => {
             if (this._evaluateGoal(goal, args)) {
                 const solution = new Map(this.context.bindings);
-                results.add(solution);
+                results.set(results.size, solution);
                 return true;
             }
             return this._backtrack();
         };
     
-        // Check recursion depth
-        if (this.context.depth >= this.context.maxDepth) {
-            throw new Error('Maximum recursion depth exceeded');
-        }
-        
-        this.context.depth++;
-        
         try {
+            this.context.incrementDepth();
             while (findSolution()) {
-                // Continue finding solutions
+                if (results.size >= this.context.maxDepth) {
+                    throw new Error('Maximum number of solutions exceeded');
+                }
             }
         } finally {
-            this.context.depth--;
+            this.context.decrementDepth();
         }
     
-        return results.size > 1 ? Array.from(results) : 
-               (results.size === 1 ? Array.from(results)[0] : false);
+        // Handle different return types based on the query
+         // Handle return types
+        if (results.size === 0) {
+            return false;
+        }
+
+        // If query contained variables
+        if (args.some(arg => this._isVariable(arg))) {
+            return results.size === 1 ? 
+                Array.from(results.values())[0] : 
+                Array.from(results.values());
+        }
+
+        // For verification queries
+        return true;
     }
 
     // Core predicates
