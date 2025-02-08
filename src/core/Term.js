@@ -7,6 +7,10 @@ export class Term {
         this.ast = ast;
     }
 
+    isNumber() {
+        return typeof this.value === 'number';
+    }
+
     isVariable() {
         return typeof this.value === 'string' && this.value.startsWith('$');
     }
@@ -23,8 +27,8 @@ export class Term {
         return {
             type: "BinaryExpression",
             operator: operator,
-            left: left instanceof Term ? { type: "Variable", name: left.value.replace("$", "") } : left,
-            right: right instanceof Term ? { type: "Variable", name: right.value.replace("$", "") } : right
+            left: left instanceof Term ? { type: "Variable", name: typeof left.value !== 'string' ? left.value : left.value.replace("$", "") } : left,
+            right: right instanceof Term ? { type: "Variable", name: typeof right.value !== 'string' ? right.value : right.value.replace("$", "") } : right
         };
     };
     

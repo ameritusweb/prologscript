@@ -56,10 +56,58 @@ class PrologScript {
     // Universal Laws
     addUniversalLaw(name, condition, mechanism) {
         this.universalLaws.addUniversalRule(name, condition, mechanism);
+
+        // Add as a predicate
+        this.predicate(name, (state) => {
+            if (!this.activeReality) return false;
+            
+            // Get the universal rule
+            const rule = this.universalLaws.causalRules.get(name);
+            if (!rule) return false;
+
+            // Check for reality-specific override
+            const override = rule.override.get(this.activeReality.name);
+            
+            if (override && override.condition(this.activeReality)) {
+                // Use override mechanism
+                return override.mechanism(state);
+            } else if (rule.condition(this.activeReality)) {
+                // Use default mechanism
+                return rule.mechanism(state);
+            }
+            
+            return false;
+        });
+
         // Apply to all realities
         for (const reality of this.realities.values()) {
             reality.addRule(name, condition, mechanism);
         }
+    }
+
+    overrideUniversalLaw(ruleName, newMechanism, condition = null) {
+        if (!this.activeReality) {
+            throw new Error('No active reality');
+        }
+    
+        // Check if the rule exists and can be overridden
+        if (!this.universalLaws.causalRules.has(ruleName)) {
+            throw new Error(`Universal rule ${ruleName} not found`);
+        }
+    
+        if (!this.universalLaws.canOverride(ruleName)) {
+            throw new Error(`Universal rule ${ruleName} cannot be overridden`);
+        }
+    
+        const rule = this.universalLaws.causalRules.get(ruleName);
+        
+        // Store the override for this reality
+        rule.override.set(this.activeReality.name, {
+            mechanism: newMechanism,
+            condition: condition || (() => true)
+        });
+    
+        return true;
     }
 
     // Wave Functions
@@ -136,6 +184,13 @@ class PrologScript {
 
         // Arithmetic predicates
         this.predicate('add', ($X, $Y, $Result) => {
+
+            const x = this._evaluateArithmetic($X);
+            const y = this._evaluateArithmetic($Y);
+            
+            if (x !== null && y !== null) {
+                return this.unify($Result, x + y);
+            }
 
             const xTerm = this._resolveTerm($X);
             const yTerm = this._resolveTerm($Y);
@@ -453,6 +508,11 @@ class PrologScript {
                 this.activeReality.causalModel.addNode(variable);
             }
             this.activeReality.causalModel.nodes.get(variable).state = state;
+
+             // Also add to knowledgeBase
+            const key = `${variable}`;
+            this.knowledgeBase.set(key, state);
+
             return true;
         });
 
@@ -583,6 +643,7 @@ class PrologScript {
             throw new Error('No active reality');
         }
     
+        // Handle predicate functions
         if (typeof this[goal] === 'function') {
             this.context.incrementDepth();
             try {
@@ -596,11 +657,28 @@ class PrologScript {
             }
         }
     
+        // NEW: Check causal model first
+        if (this.activeReality.causalModel.nodes.has(goal)) {
+            const node = this.activeReality.causalModel.nodes.get(goal);
+            if (args.length === 0) {
+                return node.state;
+            }
+            // If there are args, create a binding
+            if (args.length === 1 && this._isVariable(args[0])) {
+                const results = new Map();
+                const solution = new Map();
+                solution.set(args[0].slice(1), node.state);
+                results.set(0, solution);
+                return solution;
+            }
+        }
+    
         const queryKey = `${goal}:${args.join(':')}`;
-        const results = new Map();  // Change to Map instead of Set
+        const results = new Map();
         this.context = new UnificationContext();
     
-        // 1. Direct fact check
+        // Rest of the existing query function...
+        // Direct fact check
         for (let [key, value] of this.knowledgeBase) {
             const bindings = this._matchPattern(queryKey, key);
             if (bindings) {
@@ -618,7 +696,7 @@ class PrologScript {
             }
         }
     
-        // 2. Rule-based inference with backtracking
+        // Rule-based inference with backtracking
         const findSolution = () => {
             if (this._evaluateGoal(goal, args)) {
                 const solution = new Map(this.context.bindings);
@@ -639,13 +717,11 @@ class PrologScript {
             this.context.decrementDepth();
         }
     
-        // Handle different return types based on the query
-         // Handle return types
         if (results.size === 0) {
             return false;
         }
-
-        // **NEW: Extract Variables from AST and Store Them in Bindings**
+    
+        // Extract Variables from AST and Store Them in Bindings
         for (let solution of results.values()) {
             const resultTerm = solution.get('result');
             if (resultTerm instanceof Term && resultTerm.ast) {
@@ -657,15 +733,14 @@ class PrologScript {
                 }
             }
         }
-
+    
         // If query contained variables
         if (args.some(arg => this._isVariable(arg))) {
             return results.size === 1 ? 
                 Array.from(results.values())[0] : 
                 Array.from(results.values());
         }
-
-        // For verification queries
+    
         return true;
     }
 

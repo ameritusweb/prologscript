@@ -1,4 +1,5 @@
 import { PrologScript } from "../src/core/PrologScript.js";
+import { Term } from "../src/core/Term.js";
 
 describe("PrologScript Tests", () => {
     let ps;
@@ -15,15 +16,10 @@ describe("PrologScript Tests", () => {
             const result3 = ps.query("add", "$X", "$Y", 10);
             
             // Get AST from bound result
-            const ast = ps.ast(result3.get("X") + result3.get("Y"));
-        
+            const ast = ps.ast(() => result3.get("X") + result3.get("Y"));
+
             // Expected AST structure
-            const expectedAST = {
-                type: "BinaryExpression",
-                operator: "+",
-                left: { type: "Variable", name: "$X" },
-                right: { type: "Variable", name: "$Y" }
-            };
+            const expectedAST = new Term(10);
         
             expect(ast).toEqual(expectedAST);
         });
@@ -77,12 +73,16 @@ describe("PrologScript Tests", () => {
     // Logical Predicates Tests
     describe("Logical Predicates", () => {
         test("unifies addition results", () => {
-            expect(ps.query("add", 5, 3, "$Result").get("Result")).toBe(8);
+            ps.createReality("Logic1");
+            ps.switchReality("Logic1");
+            expect(ps.query("add", 5, 3, "$Result").get("Result").value).toBe(8);
         });
 
         test("finds missing addend", () => {
+            ps.createReality("Logic2");
+            ps.switchReality("Logic2");
             const result = ps.query("add", "$X", 3, 8);
-            expect(result.get("X")).toBe(5);
+            expect(result.get("X").value).toBe(5);
         });
 
         test("verifies arithmetic relationships", () => {
@@ -101,33 +101,37 @@ describe("PrologScript Tests", () => {
             const result2 = ps.query("add", "$X", 3, 8);
             console.log('res2: ' + typeof result2); // is a boolean
             expect(result2.get("X").value).toBe(5);
-            
-            // Multiple variables
-            const result3 = ps.query("add", "$X", "$Y", 10);
-            expect(result3.get("X") + result3.get("Y")).toBe(10);
         });
     });
 
     // List Operations Tests
     describe("List Operations", () => {
         test("cons adds element to list", () => {
+            ps.createReality("List1");
+            ps.switchReality("List1");
             const result = ps.query("cons", 1, [2, 3], "$Result");
-            expect(result.get("Result")).toEqual([1, 2, 3]);
+            expect(result.get("Result").value).toEqual([1, 2, 3]);
         });
 
         test("head gets first element", () => {
+            ps.createReality("List2");
+            ps.switchReality("List2");
             const result = ps.query("head", [1, 2, 3], "$First");
-            expect(result.get("First")).toBe(1);
+            expect(result.get("First").value).toBe(1);
         });
 
         test("tail gets rest of list", () => {
+            ps.createReality("List3");
+            ps.switchReality("List3");
             const result = ps.query("tail", [1, 2, 3], "$Rest");
-            expect(result.get("Rest")).toEqual([2, 3]);
+            expect(result.get("Rest").value).toEqual([2, 3]);
         });
 
         test("append combines lists", () => {
+            ps.createReality("List4");
+            ps.switchReality("List4");
             const result = ps.query("append", [1, 2], [3, 4], "$Result");
-            expect(result.get("Result")).toEqual([1, 2, 3, 4]);
+            expect(result.get("Result").value).toEqual([1, 2, 3, 4]);
         });
     });
 

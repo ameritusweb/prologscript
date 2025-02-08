@@ -15,18 +15,19 @@ console.log("Switched to Quantum Realm:", ps.switchReality("Quantum Realm"));
 // const result1 = ps.query("add", 5, 3, "$Result");
 console.log('Hello');
 
-ps.addUniversalLaw(
-    "gravity",
-    (reality) => true,
-    (state) => ({ force: state.mass * 9.81 })
-);
+ps.createReality("Logic3");
+            ps.switchReality("Logic3");
+        
+            const result3 = ps.query("add", "$X", "$Y", 10);
+            
+            // Get AST from bound result
+            const ast = ps.ast(() => result3.get("X") + result3.get("Y"));
+        
+            const hAst = ps._standardizeAST(ast);
 
-ps.createReality("Moon");
-ps.switchReality("Moon");
-ps.overrideUniversalLaw(
-    "gravity",
-    (state) => ({ force: state.mass * 1.62 })
-);
+            const expectedAST = {
+                value: 10
+            };
 
-const result = ps.query("gravity", { mass: 1 });
+            const hExpectedAST = ps._standardizeAST(expectedAST);
 console.log('World');
