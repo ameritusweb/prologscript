@@ -424,44 +424,49 @@ class PrologScript {
     _initializeCounterfactualPredicates() {
         // Define causal relationships
         this.predicate('causes', (cause, effect, mechanism) => {
-            if (!this.causalModel.nodes.has(cause)) {
-                this.causalModel.addNode(cause);
+            if (!this.activeReality) return false;
+            if (!this.activeReality.causalModel.nodes.has(cause)) {
+                this.activeReality.causalModel.addNode(cause);
             }
-            if (!this.causalModel.nodes.has(effect)) {
-                this.causalModel.addNode(effect);
+            if (!this.activeReality.causalModel.nodes.has(effect)) {
+                this.activeReality.causalModel.addNode(effect);
             }
-            this.causalModel.addCause(cause, effect, mechanism);
+            this.activeReality.causalModel.addCause(cause, effect, mechanism);
             return true;
         });
 
         // Define possible states for a variable
         this.predicate('stateSpace', (variable, possibleStates) => {
-            if (!this.causalModel.nodes.has(variable)) {
-                this.causalModel.addNode(variable, null, possibleStates);
+            if (!this.activeReality) return false;
+            if (!this.activeReality.causalModel.nodes.has(variable)) {
+                this.activeReality.causalModel.addNode(variable, null, possibleStates);
             } else {
-                this.causalModel.nodes.get(variable).stateSpace = possibleStates;
+                this.activeReality.causalModel.nodes.get(variable).stateSpace = possibleStates;
             }
             return true;
         });
 
         // Assert actual state
         this.predicate('assert', (variable, state) => {
-            if (!this.causalModel.nodes.has(variable)) {
-                this.causalModel.addNode(variable);
+            if (!this.activeReality) return false;
+            if (!this.activeReality.causalModel.nodes.has(variable)) {
+                this.activeReality.causalModel.addNode(variable);
             }
-            this.causalModel.nodes.get(variable).state = state;
+            this.activeReality.causalModel.nodes.get(variable).state = state;
             return true;
         });
 
         // Counterfactual intervention
         this.predicate('intervene', (variable, state) => {
-            this.causalModel.intervene(variable, state);
+            if (!this.activeReality) return false;
+            this.activeReality.causalModel.intervene(variable, state);
             return true;
         });
 
         // Query state after intervention
         this.predicate('queryState', (variable, $State) => {
-            const state = this.causalModel.nodes.get(variable).state;
+            if (!this.activeReality) return false;
+            const state = this.activeReality.causalModel.nodes.get(variable).state;
             return this._bindVariable($State, state);
         });
 
@@ -486,7 +491,7 @@ class PrologScript {
 
     // Create a new counterfactual scenario
     createCounterfactual(name) {
-        return new Counterfactual(this, name);
+        return new Counterfactual(this.activeReality, name);
     }
 
     _resolveValue(value) {

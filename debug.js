@@ -15,17 +15,15 @@ console.log("Switched to Quantum Realm:", ps.switchReality("Quantum Realm"));
 // const result1 = ps.query("add", 5, 3, "$Result");
 console.log('Hello');
 
-const result3 = ps.query("add", "$X", "$Y", 10);
+ps.createReality("TestReality");
+            ps.switchReality("TestReality");
             
-const X = result3.get("X");
-const Y = result3.get("Y");
+            ps.assert("light", "off");
+            ps.causes("switch", "light", 
+                (state) => state === "on" ? "on" : "off"
+            );
 
-const astResult = ps.ast(() => result3.get("X") + result3.get("Y"));
-            // Expected AST structure
-            const expectedAST = {
-                type: "BinaryExpression",
-                operator: "+",
-                left: { type: "Variable", name: "$X" },
-                right: { type: "Variable", name: "$Y" }
-            };
+            const cf = ps.createCounterfactual("switchOn")
+                .intervene("switch", "on")
+                .compute();
 console.log('World');
