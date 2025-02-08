@@ -15,15 +15,18 @@ console.log("Switched to Quantum Realm:", ps.switchReality("Quantum Realm"));
 // const result1 = ps.query("add", 5, 3, "$Result");
 console.log('Hello');
 
-ps.createReality("TestReality");
-            ps.switchReality("TestReality");
-            
-            ps.assert("light", "off");
-            ps.causes("switch", "light", 
-                (state) => state === "on" ? "on" : "off"
-            );
+ps.addUniversalLaw(
+    "gravity",
+    (reality) => true,
+    (state) => ({ force: state.mass * 9.81 })
+);
 
-            const cf = ps.createCounterfactual("switchOn")
-                .intervene("switch", "on")
-                .compute();
+ps.createReality("Moon");
+ps.switchReality("Moon");
+ps.overrideUniversalLaw(
+    "gravity",
+    (state) => ({ force: state.mass * 1.62 })
+);
+
+const result = ps.query("gravity", { mass: 1 });
 console.log('World');

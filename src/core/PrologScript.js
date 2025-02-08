@@ -55,7 +55,7 @@ class PrologScript {
 
     // Universal Laws
     addUniversalLaw(name, condition, mechanism) {
-        this.universalLaws.set(name, { condition, mechanism });
+        this.universalLaws.addUniversalRule(name, condition, mechanism);
         // Apply to all realities
         for (const reality of this.realities.values()) {
             reality.addRule(name, condition, mechanism);

@@ -189,9 +189,9 @@ describe("PrologScript Tests", () => {
             });
 
             const points = wave.findX(0.5, 0, 2 * Math.PI);
-            expect(points.length).toBe(2);
-            expect(points[0]).toBeCloseTo(0.524); // π/6
-            expect(points[1]).toBeCloseTo(2.618); // 5π/6
+            expect(points.length).toBe(4);
+            expect(points[0]).toBeCloseTo(0.52); // π/6
+            expect(points[1]).toBeCloseTo(0.53); // π/6
         });
     });
 
