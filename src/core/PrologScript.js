@@ -8,6 +8,7 @@ import { Term } from './Term.js';
 import { Agent } from '../features/agents/Agent.js';
 import { MathConstraint } from '../features/math/MathConstraint.js';
 import { WaveFunction } from '../features/math/WaveFunction.js';
+import { TimeStep } from '../features/temporal/TimeStep.js';
 import { Variable, createVariable } from './Variable.js';
 import esprima from 'esprima';
 
@@ -20,6 +21,7 @@ class PrologScript {
         this.rules = new Map();
         this.context = new UnificationContext();
         this.semanticRelations = new Map();
+        this.timeline = [];
         this._initializePredicates();
         this._initializeMathPredicates();
         this._initializeWavePredicates();
@@ -555,6 +557,12 @@ class PrologScript {
     // Create a new counterfactual scenario
     createCounterfactual(name) {
         return new Counterfactual(this.activeReality, name);
+    }
+
+    // Add temporal state
+    addTimeStep(timestamp, states) {
+        this.timeline.push(new TimeStep(timestamp, states));
+        this.timeline.sort((a, b) => a.timestamp - b.timestamp);
     }
 
     addSemanticRelation(term1, term2) {

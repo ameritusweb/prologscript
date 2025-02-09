@@ -25,6 +25,8 @@ export class CausalModel {
 
     // Causal relationships
     addCause(cause, effect, mechanism) {
+        console.log(`CausalModel: Adding cause ${cause} -> ${effect}`);
+        
         // Ensure nodes exist
         if (!this.nodes.has(cause)) {
             this.addNode(cause);
@@ -37,15 +39,55 @@ export class CausalModel {
         if (!this.edges.has(cause)) {
             this.edges.set(cause, new Map());
         }
+        
+        // Add the mechanism
         this.edges.get(cause).set(effect, mechanism);
         
-        // Update parent-child relationships
+        // Update relationships
         this.nodes.get(effect).parents.add(cause);
         this.nodes.get(cause).children.add(effect);
+        
+        console.log('Current edges:', Array.from(this.edges.entries()));
+        console.log('Current nodes:', Array.from(this.nodes.entries()));
     }
 
-    // Interventions
+    _propagateEffects(startNode) {
+        console.log(`Propagating effects from ${startNode}`);
+        console.log('Current edges:', Array.from(this.edges.entries()));
+        
+        const visited = new Set();
+        const queue = [startNode];
+
+        while (queue.length > 0) {
+            const currentNode = queue.shift();
+            if (visited.has(currentNode)) continue;
+            visited.add(currentNode);
+
+            const currentState = this.getState(currentNode);
+            console.log(`Processing ${currentNode}, state:`, currentState);
+
+            const edges = this.edges.get(currentNode);
+            if (!edges) {
+                console.log(`No edges found for ${currentNode}`);
+                continue;
+            }
+
+            for (const [childNode, mechanism] of edges) {
+                if (!this.interventions.has(childNode)) {
+                    console.log(`Updating ${childNode} based on ${currentNode}`);
+                    const newState = mechanism(currentState);
+                    console.log(`New state for ${childNode}:`, newState);
+                    if (newState !== null) {
+                        this._updateNodeState(childNode, newState);
+                        queue.push(childNode);
+                    }
+                }
+            }
+        }
+    }
+
     intervene(node, value) {
+        console.log(`Intervening on ${node} with value:`, value);
         this.interventions.set(node, value);
         this._propagateEffects(node);
         return this.getState(node);
@@ -90,52 +132,16 @@ export class CausalModel {
         return effects;
     }
 
-    // Effect propagation
-    _propagateEffects(startNode) {
-        const visited = new Set();
-        const queue = [startNode];
-
-        while (queue.length > 0) {
-            const currentNode = queue.shift();
-            if (visited.has(currentNode)) continue;
-            visited.add(currentNode);
-
-            const edges = this.edges.get(currentNode);
-            if (!edges) continue;
-
-            for (const [childNode, mechanism] of edges) {
-                const newState = mechanism(this.getState(currentNode));
-                if (newState !== null) {
-                    this._updateNodeState(childNode, newState);
-                    queue.push(childNode);
-                }
-            }
-        }
-    }
-
-    propagateEffects(state) {
-        // Update nodes based on external state
-        for (const [key, value] of state) {
-            if (this.nodes.has(key)) {
-                this._updateNodeState(key, value);
-            }
-        }
-
-        // Propagate effects through the causal network
-        for (const node of this.nodes.keys()) {
-            if (this.getState(node) !== null) {
-                this._propagateEffects(node);
-            }
-        }
-    }
-
     // State management
     getState(node) {
-        // Interventions take precedence
+        // First check interventions
         if (this.interventions.has(node)) {
             return this.interventions.get(node);
         }
-        return this.nodes.get(node)?.state ?? null;
+        
+        // Then check node state
+        const nodeInfo = this.nodes.get(node);
+        return nodeInfo ? nodeInfo.state : null;
     }
 
     _updateNodeState(node, newState) {
