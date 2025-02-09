@@ -17,6 +17,7 @@ class PrologScript {
         this.knowledgeBase = new Map();
         this.rules = new Map();
         this.context = new UnificationContext();
+        this.semanticRelations = new Map();
         this._initializePredicates();
         this._initializeMathPredicates();
         this._initializeWavePredicates();
@@ -554,6 +555,54 @@ class PrologScript {
         return new Counterfactual(this.activeReality, name);
     }
 
+    addSemanticRelation(term1, term2) {
+        // Get or create set for term1
+        if (!this.semanticRelations.has(term1)) {
+            this.semanticRelations.set(term1, new Set());
+        }
+        // Get or create set for term2
+        if (!this.semanticRelations.has(term2)) {
+            this.semanticRelations.set(term2, new Set());
+        }
+        
+        // Add bidirectional relationship
+        this.semanticRelations.get(term1).add(term2);
+        this.semanticRelations.get(term2).add(term1);
+    }
+    
+    areSemanticallySimilar(term1, term2) {
+        if (term1 === term2) return true;
+        
+        // Direct relationship check
+        if (this.semanticRelations.has(term1) && 
+            this.semanticRelations.get(term1).has(term2)) {
+            return true;
+        }
+    
+        // Check transitive relationships (if A->B and B->C, then A->C)
+        const visited = new Set();
+        const queue = [term1];
+    
+        while (queue.length > 0) {
+            const current = queue.shift();
+            if (visited.has(current)) continue;
+            visited.add(current);
+    
+            const related = this.semanticRelations.get(current);
+            if (related && related.has(term2)) return true;
+    
+            if (related) {
+                for (const term of related) {
+                    if (!visited.has(term)) {
+                        queue.push(term);
+                    }
+                }
+            }
+        }
+    
+        return false;
+    }
+
     _resolveValue(value) {
         if (typeof value === 'string' && value.startsWith('$')) {
             return this.context.bindings.get(value.slice(1));
@@ -642,6 +691,31 @@ class PrologScript {
         if (!this.activeReality) {
             throw new Error('No active reality');
         }
+
+        // Handle predefined predicate types (isA, hasA)
+        const predicateType = goal.split(':')[0];
+        if (['isA', 'hasA'].includes(predicateType)) {
+            const result = (() => {
+                switch (predicateType) {
+                    case 'isA':
+                        return this._queryIsA(args[0], args[1]);
+                    case 'hasA':
+                        return this._queryHasA(args[0], args[1]);
+                }
+            })();
+
+            // Convert result to bindings if variables are present
+            if (result && args.some(arg => this._isVariable(arg))) {
+                const bindings = new Map();
+                args.forEach((arg, index) => {
+                    if (this._isVariable(arg)) {
+                        bindings.set(arg.slice(1), result);
+                    }
+                });
+                return bindings;
+            }
+            return result;
+        }
     
         // Handle predicate functions
         if (typeof this[goal] === 'function') {
@@ -700,8 +774,10 @@ class PrologScript {
         const findSolution = () => {
             if (this._evaluateGoal(goal, args)) {
                 const solution = new Map(this.context.bindings);
-                results.set(results.size, solution);
-                return true;
+                if (!this._hasSolution(results, solution)) {  // Only add if it's a new solution
+                    results.set(results.size, solution);
+                    return true;
+                }
             }
             return this._backtrack();
         };
@@ -776,17 +852,17 @@ class PrologScript {
             if (directResult !== null && directResult !== false) {
                 return directResult;
             }
-    
-            // Rule-based inference
+
+            // Rule-based inference with query term
             for (let [ruleHead, ruleBody] of this.rules) {
                 if (this._matchesRule(query, args, ruleHead)) {
-                    const inferenceResult = this._evaluateRuleBody(ruleBody, args);
+                    const inferenceResult = this._evaluateRuleBody(ruleBody, args, query);  // Pass query
                     if (inferenceResult) {
                         return true;
                     }
                 }
             }
-    
+
             return false;
         }
 
@@ -950,16 +1026,34 @@ class PrologScript {
         return this._evaluateGoal(alternative.goal, alternative.args);
     }
 
+    _hasSolution(results, newSolution) {
+        for (const existing of results.values()) {
+            if (this._solutionsEqual(existing, newSolution)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    _solutionsEqual(sol1, sol2) {
+        if (sol1.size !== sol2.size) return false;
+        for (const [key, val1] of sol1) {
+            const val2 = sol2.get(key);
+            if (val1 !== val2) return false;
+        }
+        return true;
+    }
+
     _evaluateGoal(goal, args) {
         // Check for predicate as method
         if (typeof this[goal] === 'function') {
             return this[goal](...args);
         }
-    
+
         // Check for rules
         const rules = Array.from(this.rules.entries())
             .filter(([head]) => this._matchesRule(goal, args, head));
-    
+
         if (rules.length > 0) {
             this.context.addChoicePoint(rules.map(([head, body]) => ({
                 goal: body,
@@ -967,10 +1061,26 @@ class PrologScript {
             })));
             
             const [, body] = rules[0];
-            return this._evaluateRuleBody(body, args);
+            return this._evaluateRuleBody(body, args, goal);  // Pass original goal
         }
-    
+
         return false;
+        }
+
+    _substituteArgs(queryArgs, ruleHead) {
+        const headParts = ruleHead.split(':');  // ['mortal', '$X']
+        const variables = headParts.slice(1);    // ['$X']
+        
+        const bindings = new Map();
+        variables.forEach((variable, index) => {
+            if (index < queryArgs.length) {
+                // Store without $ prefix
+                const varName = variable.startsWith('$') ? variable.slice(1) : variable;
+                bindings.set(varName, queryArgs[index]);
+            }
+        });
+        
+        return bindings;
     }
 
     _evaluateArithmetic(term) {
@@ -980,24 +1090,64 @@ class PrologScript {
     }
 
     _matchesRule(query, args, ruleHead) {
-        // Implement rule matching logic
-        // This is a simplified version
-        return ruleHead.startsWith(query);
+        const [ruleName] = ruleHead.split(':');
+        return ruleName === query;
     }
 
-    _evaluateRuleBody(conditions, context) {
+    _evaluateRuleBody(conditions, args, queryTerm) {  // Accept queryTerm parameter
+        const bindings = (args instanceof Map) ? args : 
+                    this._substituteArgs(args, conditions[0]);
+    
         return conditions.every(condition => {
             if (typeof condition === 'function') {
                 return condition(context);
             }
             
-            const substitutedCondition = this._substituteVariables(condition, context.bindings);
-            return this.query(...substitutedCondition.split(':'));
+            const substitutedCondition = this._substituteVariables(condition, bindings);
+            const parts = substitutedCondition.split(':');
+    
+            console.log('Evaluating condition:', substitutedCondition);
+            console.log('Parts:', parts);
+            console.log('Original query term:', queryTerm);  // Debug
+    
+            // For isA predicates
+            if (parts[0] === 'isA') {
+                const key = `isA:${parts[2]}`;
+                const set = this.knowledgeBase.get(key);
+                return set && set.has(parts[1]);
+            }
+    
+            // For hasA predicates
+            if (parts[0] === 'hasA') {
+                for (const [existingKey, value] of this.knowledgeBase) {
+                    const keyParts = existingKey.split(':');
+                    if (keyParts[0] === 'hasA' && 
+                        keyParts[1] === parts[1] && 
+                        this.areSemanticallySimilar(parts[2], queryTerm)) {
+                        // Convert string 'true'/'false' to boolean if needed
+                        const expectedValue = parts[3] === 'true' ? true : 
+                                           parts[3] === 'false' ? false : 
+                                           parts[3];
+                        return value === expectedValue;
+                    }
+                }
+            }
+
+            return false;
         });
     }
 
     _substituteVariables(pattern, bindings) {
+        console.log('Pattern:', pattern);
+        console.log('Bindings:', bindings);
+        console.log('Bindings type:', bindings instanceof Map);
+        if (bindings instanceof Map) {
+            console.log('Bindings contents:', Array.from(bindings.entries()));
+        }
+        
         return pattern.replace(/\$([A-Z][a-zA-Z0-9]*)/g, (_, varName) => {
+            console.log('Found variable:', varName);
+            console.log('Binding value:', bindings.get(varName));
             return bindings.get(varName) || `$${varName}`;
         });
     }

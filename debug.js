@@ -4,30 +4,36 @@ import { PrologScript } from "./src/core/PrologScript.js";
 const ps = new PrologScript();
 console.log("PrologScript initialized!");
 
-// Test basic arithmetic functions
-console.log("3 + 5 =", ps.computeAdd(3, 5));
-console.log("10 - 4 =", ps.computeSubtract(10, 4));
+ps.createReality("Debug");
+ps.switchReality("Debug");
 
-// Test reality creation
-ps.createReality("Quantum Realm");
-console.log("Switched to Quantum Realm:", ps.switchReality("Quantum Realm"));
+// Define semantic relationships
+ps.addSemanticRelation('mortality', 'mortal');
+ps.addSemanticRelation('alive', 'living');
+ps.addSemanticRelation('living', 'life');
 
-// const result1 = ps.query("add", 5, 3, "$Result");
-console.log('Hello');
+// Define facts
+ps.isA('socrates', 'human');
+ps.hasA('human', 'mortality', true);
 
-ps.createReality("Logic3");
-            ps.switchReality("Logic3");
-        
-            const result3 = ps.query("add", "$X", "$Y", 10);
-            
-            // Get AST from bound result
-            const ast = ps.ast(() => result3.get("X") + result3.get("Y"));
-        
-            const hAst = ps._standardizeAST(ast);
+// Define rules
+ps.addRule('mortal:$X',
+    'isA:$X:human',
+    'hasA:human:mortality:true'
+);
 
-            const expectedAST = {
-                value: 10
-            };
+// Now this should work
+console.log(ps.infer('mortal', 'socrates')); // true
 
-            const hExpectedAST = ps._standardizeAST(expectedAST);
-console.log('World');
+// And you can do more complex semantic relationships
+ps.hasA('plant', 'alive', true);
+ps.addRule('living:$X',
+    'hasA:$X:life:true'
+);
+console.log(ps.infer('living', 'plant')); // true
+
+// Custom predicates
+ps.predicate('greaterThan', (x, y) => x > y);
+console.log(ps.greaterThan(5, 3)); // true
+
+console.log('Finish');
