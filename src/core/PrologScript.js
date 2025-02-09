@@ -6,7 +6,9 @@ import { UniversalLaws } from './UniversalLaws.js';
 import { UnificationContext } from './UnificationContext.js';
 import { Term } from './Term.js';
 import { Agent } from '../features/agents/Agent.js';
+import { MathConstraint } from '../features/math/MathConstraint.js';
 import { WaveFunction } from '../features/math/WaveFunction.js';
+import { Variable, createVariable } from './Variable.js';
 import esprima from 'esprima';
 
 class PrologScript {
@@ -285,21 +287,21 @@ class PrologScript {
 
     _initializeMathPredicates() {
         // Arithmetic operations
-        this.predicate('sum', ($X, $Y, $Z) => {
+        this.predicate('computeSum', ($X, $Y, $Z) => {
             const x = this._resolveValue($X);
             const y = this._resolveValue($Y);
             const z = this._resolveValue($Z);
             return z === x + y;
         });
 
-        this.predicate('multiply', ($X, $Y, $Z) => {
+        this.predicate('computeMultiply', ($X, $Y, $Z) => {
             const x = this._resolveValue($X);
             const y = this._resolveValue($Y);
             const z = this._resolveValue($Z);
             return z === x * y;
         });
 
-        this.predicate('divide', ($X, $Y, $Z) => {
+        this.predicate('computeDivide', ($X, $Y, $Z) => {
             const x = this._resolveValue($X);
             const y = this._resolveValue($Y);
             const z = this._resolveValue($Z);
@@ -307,32 +309,32 @@ class PrologScript {
         });
 
         // Comparison predicates
-        this.predicate('greaterThan', ($X, $Y) => {
+        this.predicate('computeGreaterThan', ($X, $Y) => {
             const x = this._resolveValue($X);
             const y = this._resolveValue($Y);
             return x > y;
         });
 
-        this.predicate('lessThan', ($X, $Y) => {
+        this.predicate('computeLessThan', ($X, $Y) => {
             const x = this._resolveValue($X);
             const y = this._resolveValue($Y);
             return x < y;
         });
 
         // Mathematical functions
-        this.predicate('square', ($X, $Y) => {
+        this.predicate('computeSquare', ($X, $Y) => {
             const x = this._resolveValue($X);
             const y = this._resolveValue($Y);
             return y === x * x;
         });
 
-        this.predicate('sqrt', ($X, $Y) => {
+        this.predicate('computeSqrt', ($X, $Y) => {
             const x = this._resolveValue($X);
             const y = this._resolveValue($Y);
             return x >= 0 && y === Math.sqrt(x);
         });
 
-        this.predicate('power', ($X, $Y, $Z) => {
+        this.predicate('computePower', ($X, $Y, $Z) => {
             const x = this._resolveValue($X);
             const y = this._resolveValue($Y);
             const z = this._resolveValue($Z);
@@ -340,7 +342,7 @@ class PrologScript {
         });
 
         // Modulo operation
-        this.predicate('mod', ($X, $Y, $Z) => {
+        this.predicate('computeMod', ($X, $Y, $Z) => {
             const x = this._resolveValue($X);
             const y = this._resolveValue($Y);
             const z = this._resolveValue($Z);
@@ -348,7 +350,7 @@ class PrologScript {
         });
 
         // Range constraints
-        this.predicate('between', ($X, $Min, $Max) => {
+        this.predicate('computeBetween', ($X, $Min, $Max) => {
             const x = this._resolveValue($X);
             const min = this._resolveValue($Min);
             const max = this._resolveValue($Max);
@@ -613,11 +615,16 @@ class PrologScript {
     // Add constraint to variable
     addConstraint(varName, operator, value) {
         const constraint = new MathConstraint(operator, value);
-        this.rules.forEach(rule => {
-            if (rule.variables.has(varName)) {
-                rule.variables.get(varName).addConstraint(value => constraint.evaluate(value));
-            }
-        });
+        // Try to get the variable instance from the context.
+        let variable = this.context.bindings.get(varName);
+        if (!variable || !(variable instanceof Variable)) {
+            // If no Variable instance exists, create one and add it to the context.
+            variable = createVariable(varName);
+            this.context.bindings.set(varName, variable);
+        }
+        // Add the constraint to the variable.
+        variable.addConstraint(x => constraint.evaluate(x));
+        return true;
     }
 
     // Add mathematical rule
@@ -1119,6 +1126,18 @@ class PrologScript {
     _evaluateRuleBody(conditions, args, queryTerm) {  // Accept queryTerm parameter
         const bindings = (args instanceof Map) ? args : this._substituteArgs(args, conditions[0]);
 
+        // Merge the local bindings into the overall context so that condition functions see them.
+        const context = this.context;
+        bindings.forEach((value, key) => {
+            if (!(typeof value === 'string') || !value.startsWith('$')) {
+                context.bindings.set(key, value);
+            }
+            else if (!context.bindings.has(key))
+            {
+                context.bindings.set(key, value);
+            }
+        });
+
         console.log('\n_evaluateRuleBody:', {
             conditions,
             bindings: Array.from(bindings.entries()),
@@ -1234,6 +1253,7 @@ class PrologScript {
     }
 
     _bindVariable(variable, value) {
+
         // Case 1: Variable is a Term instance
         if (variable instanceof Term) {
             if (this._occursCheck(variable, value)) return false;
