@@ -1045,6 +1045,8 @@ class PrologScript {
     }
 
     _evaluateGoal(goal, args) {
+        console.log('\n_evaluateGoal:', { goal, args });
+
         // Check for predicate as method
         if (typeof this[goal] === 'function') {
             return this[goal](...args);
@@ -1055,17 +1057,37 @@ class PrologScript {
             .filter(([head]) => this._matchesRule(goal, args, head));
 
         if (rules.length > 0) {
-            this.context.addChoicePoint(rules.map(([head, body]) => ({
-                goal: body,
-                args: this._substituteArgs(args, head)
-            })));
-            
-            const [, body] = rules[0];
-            return this._evaluateRuleBody(body, args, goal);  // Pass original goal
+            // Try each rule
+            for (const [head, body] of rules) {
+                console.log('\nTrying rule:', head, 'with body:', body);
+                
+                const bindings = this._substituteArgs(args, head);
+                console.log('Initial bindings:', Array.from(bindings.entries()));
+
+                // If it's a multi-condition rule
+                if (Array.isArray(body)) {
+                    // Get first condition result and its bindings
+                    const [firstCondition, ...restConditions] = body;
+                    console.log('Evaluating first condition:', firstCondition);
+                    
+                    if (this._evaluateRuleBody([firstCondition], bindings, goal)) {
+                        console.log('First condition succeeded, bindings:', Array.from(bindings.entries()));
+                        
+                        // Use those bindings for next conditions
+                        if (this._evaluateRuleBody(restConditions, bindings, goal)) {
+                            return true;
+                        }
+                    }
+                } else {
+                    if (this._evaluateRuleBody([body], bindings, goal)) {
+                        return true;
+                    }
+                }
+            }
         }
 
         return false;
-        }
+    }
 
     _substituteArgs(queryArgs, ruleHead) {
         const headParts = ruleHead.split(':');  // ['mortal', '$X']
@@ -1095,47 +1117,96 @@ class PrologScript {
     }
 
     _evaluateRuleBody(conditions, args, queryTerm) {  // Accept queryTerm parameter
-        const bindings = (args instanceof Map) ? args : 
-                    this._substituteArgs(args, conditions[0]);
-    
+        const bindings = (args instanceof Map) ? args : this._substituteArgs(args, conditions[0]);
+
+        console.log('\n_evaluateRuleBody:', {
+            conditions,
+            bindings: Array.from(bindings.entries()),
+            queryTerm
+        });
+
         return conditions.every(condition => {
+            console.log('\nEvaluating condition:', condition);
             if (typeof condition === 'function') {
                 return condition(context);
             }
             
             const substitutedCondition = this._substituteVariables(condition, bindings);
+            console.log('After variable substitution:', substitutedCondition);
+
             const parts = substitutedCondition.split(':');
-    
-            console.log('Evaluating condition:', substitutedCondition);
             console.log('Parts:', parts);
-            console.log('Original query term:', queryTerm);  // Debug
-    
+            console.log('Original query term:', queryTerm);
+
             // For isA predicates
             if (parts[0] === 'isA') {
                 const key = `isA:${parts[2]}`;
                 const set = this.knowledgeBase.get(key);
                 return set && set.has(parts[1]);
             }
-    
+
             // For hasA predicates
             if (parts[0] === 'hasA') {
-                for (const [existingKey, value] of this.knowledgeBase) {
-                    const keyParts = existingKey.split(':');
-                    if (keyParts[0] === 'hasA' && 
-                        keyParts[1] === parts[1] && 
-                        this.areSemanticallySimilar(parts[2], queryTerm)) {
-                        // Convert string 'true'/'false' to boolean if needed
-                        const expectedValue = parts[3] === 'true' ? true : 
-                                           parts[3] === 'false' ? false : 
-                                           parts[3];
-                        return value === expectedValue;
+                const entity = parts[1];
+                const requestedProp = parts[2];
+                const expectedValue = parts[3];
+
+                // First, try a direct lookup.
+                let key = `hasA:${entity}:${requestedProp}`;
+                console.log('Looking up fact:', key);
+                let value = this.knowledgeBase.get(key);
+                console.log('Direct lookup value:', value);
+
+                // If not found, search through all properties for the entity.
+                if (value === undefined) {
+                    const prefix = `hasA:${entity}:`;
+                    for (const factKey of this.knowledgeBase.keys()) {
+                        if (factKey.startsWith(prefix)) {
+                            const storedProp = factKey.split(':')[2];
+                            if (this.areSemanticallySimilar(storedProp, requestedProp)) {
+                                value = this.knowledgeBase.get(factKey);
+                                console.log(`Found semantically similar fact: ${factKey} ->`, value);
+                                break;
+                            }
+                        }
                     }
                 }
+                
+                console.log('Final value to compare:', value);
+                if (value !== undefined) {
+                    // If the value is a boolean, compare against the expected boolean.
+                    if (typeof value === 'boolean') {
+                        if (expectedValue && !expectedValue.startsWith('$')) {
+                            return value === (expectedValue === 'true');
+                        }
+                        return true;
+                    }
+                    // For non-boolean values, if we're looking for a specific value, compare them.
+                    if (expectedValue && !expectedValue.startsWith('$')) {
+                        return this.areSemanticallySimilar(value, expectedValue);
+                    }
+                    // If we have a variable in the expected position, bind it.
+                    if (expectedValue && expectedValue.startsWith('$')) {
+                        const varName = expectedValue.slice(1);
+                        bindings.set(varName, value);
+                        return true;
+                    }
+                    return true;
+                }
+                return false;
+            }
+
+            // Handle recursive ancestor query
+            if (parts[0] === 'ancestor') {
+                console.log('Recursive ancestor query:', parts);
+                const recursiveResult = this.query(...parts);
+                console.log('Recursive result:', recursiveResult);
+                return recursiveResult;
             }
 
             return false;
         });
-    }
+    }    
 
     _substituteVariables(pattern, bindings) {
         console.log('Pattern:', pattern);
