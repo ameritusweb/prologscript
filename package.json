@@ -1,6 +1,6 @@
 {
   "name": "prologscript",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Prolog-inspired logic engine with reality simulation and counterfactual reasoning.",
   "main": "dist/PrologScript.cjs",
   "module": "src/core/PrologScript.js",

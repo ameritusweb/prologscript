@@ -31,6 +31,8 @@
 
         // Causal relationships
         addCause(cause, effect, mechanism) {
+            console.log(`CausalModel: Adding cause ${cause} -> ${effect}`);
+            
             // Ensure nodes exist
             if (!this.nodes.has(cause)) {
                 this.addNode(cause);
@@ -43,15 +45,55 @@
             if (!this.edges.has(cause)) {
                 this.edges.set(cause, new Map());
             }
+            
+            // Add the mechanism
             this.edges.get(cause).set(effect, mechanism);
             
-            // Update parent-child relationships
+            // Update relationships
             this.nodes.get(effect).parents.add(cause);
             this.nodes.get(cause).children.add(effect);
+            
+            console.log('Current edges:', Array.from(this.edges.entries()));
+            console.log('Current nodes:', Array.from(this.nodes.entries()));
         }
 
-        // Interventions
+        _propagateEffects(startNode) {
+            console.log(`Propagating effects from ${startNode}`);
+            console.log('Current edges:', Array.from(this.edges.entries()));
+            
+            const visited = new Set();
+            const queue = [startNode];
+
+            while (queue.length > 0) {
+                const currentNode = queue.shift();
+                if (visited.has(currentNode)) continue;
+                visited.add(currentNode);
+
+                const currentState = this.getState(currentNode);
+                console.log(`Processing ${currentNode}, state:`, currentState);
+
+                const edges = this.edges.get(currentNode);
+                if (!edges) {
+                    console.log(`No edges found for ${currentNode}`);
+                    continue;
+                }
+
+                for (const [childNode, mechanism] of edges) {
+                    if (!this.interventions.has(childNode)) {
+                        console.log(`Updating ${childNode} based on ${currentNode}`);
+                        const newState = mechanism(currentState);
+                        console.log(`New state for ${childNode}:`, newState);
+                        if (newState !== null) {
+                            this._updateNodeState(childNode, newState);
+                            queue.push(childNode);
+                        }
+                    }
+                }
+            }
+        }
+
         intervene(node, value) {
+            console.log(`Intervening on ${node} with value:`, value);
             this.interventions.set(node, value);
             this._propagateEffects(node);
             return this.getState(node);
@@ -96,52 +138,16 @@
             return effects;
         }
 
-        // Effect propagation
-        _propagateEffects(startNode) {
-            const visited = new Set();
-            const queue = [startNode];
-
-            while (queue.length > 0) {
-                const currentNode = queue.shift();
-                if (visited.has(currentNode)) continue;
-                visited.add(currentNode);
-
-                const edges = this.edges.get(currentNode);
-                if (!edges) continue;
-
-                for (const [childNode, mechanism] of edges) {
-                    const newState = mechanism(this.getState(currentNode));
-                    if (newState !== null) {
-                        this._updateNodeState(childNode, newState);
-                        queue.push(childNode);
-                    }
-                }
-            }
-        }
-
-        propagateEffects(state) {
-            // Update nodes based on external state
-            for (const [key, value] of state) {
-                if (this.nodes.has(key)) {
-                    this._updateNodeState(key, value);
-                }
-            }
-
-            // Propagate effects through the causal network
-            for (const node of this.nodes.keys()) {
-                if (this.getState(node) !== null) {
-                    this._propagateEffects(node);
-                }
-            }
-        }
-
         // State management
         getState(node) {
-            // Interventions take precedence
+            // First check interventions
             if (this.interventions.has(node)) {
                 return this.interventions.get(node);
             }
-            return this.nodes.get(node)?.state ?? null;
+            
+            // Then check node state
+            const nodeInfo = this.nodes.get(node);
+            return nodeInfo ? nodeInfo.state : null;
         }
 
         _updateNodeState(node, newState) {
@@ -961,28 +967,40 @@
         }
 
         compute() {
-            // Store original states
+            // Store original states and interventions
             const originalStates = new Map();
+            const originalInterventions = new Map(this.reality.causalModel.interventions);
+
+            // Save original states
             for (const [node, info] of this.reality.causalModel.nodes) {
-                originalStates.set(node, info.state);
+                originalStates.set(node, {
+                    state: info.state,
+                    interventions: this.reality.causalModel.interventions.get(node)
+                });
             }
 
-            // Apply interventions
-            for (const [variable, value] of this.interventions) {
-                this.reality.causalModel.intervene(variable, value);
-            }
+            try {
+                // Clear existing interventions first
+                this.reality.causalModel.interventions.clear();
 
-            // Record effects
-            for (const [node, info] of this.reality.causalModel.nodes) {
-                this.effects.set(node, info.state);
-            }
-
-            // Restore original states
-            for (const [node, state] of originalStates) {
-                const nodeInfo = this.reality.causalModel.nodes.get(node);
-                if (nodeInfo) {
-                    nodeInfo.state = state;
+                // Apply our counterfactual interventions
+                for (const [variable, value] of this.interventions) {
+                    this.reality.causalModel.intervene(variable, value);
                 }
+
+                // Record effects after all interventions are applied
+                for (const [node, info] of this.reality.causalModel.nodes) {
+                    this.effects.set(node, this.reality.causalModel.getState(node));
+                }
+            } finally {
+                // Restore original states and interventions
+                for (const [node, originalData] of originalStates) {
+                    const nodeInfo = this.reality.causalModel.nodes.get(node);
+                    if (nodeInfo) {
+                        nodeInfo.state = originalData.state;
+                    }
+                }
+                this.reality.causalModel.interventions = new Map(originalInterventions);
             }
 
             return this;
@@ -1640,6 +1658,25 @@
         }
     }
 
+    class MathConstraint {
+        constructor(operator, value) {
+            this.operator = operator;
+            this.value = value;
+        }
+
+        evaluate(x) {
+            switch (this.operator) {
+                case '>': return x > this.value;
+                case '>=': return x >= this.value;
+                case '<': return x < this.value;
+                case '<=': return x <= this.value;
+                case '=': return x === this.value;
+                case '!=': return x !== this.value;
+                default: return false;
+            }
+        }
+    }
+
     class WaveFunction {
         constructor(amplitude, frequency, phase = 0, type = 'sine') {
             this.amplitude = amplitude;
@@ -1679,6 +1716,153 @@
         }
     }
 
+    class TimeStep {
+        constructor(timestamp, states) {
+            this.timestamp = timestamp;
+            this.states = new Map(states);
+        }
+    }
+
+    // Variable.js
+
+    class Variable {
+        constructor(name) {
+            this.name = name;
+            this.binding = null;
+            this.constraints = new Set();
+        }
+
+        bind(value, context) {
+            // If variable is unbound
+            if (this.binding === null) {
+                // Check constraints before binding
+                if (this._satisfiesConstraints(value)) {
+                    // Create binding in context
+                    context.bindings.set(this.name, value);
+                    this.binding = value;
+                    return true;
+                }
+                return false;
+            }
+            // If already bound, check if values match
+            return this.binding === value;
+        }
+
+        addConstraint(constraint) {
+            this.constraints.add(constraint);
+        }
+
+        _satisfiesConstraints(value) {
+            return Array.from(this.constraints).every(constraint => constraint(value));
+        }
+
+        unbind(context) {
+            context.bindings.delete(this.name);
+            this.binding = null;
+        }
+
+        getValue(context) {
+            return context.bindings.get(this.name) || null;
+        }
+
+        isVariable() {
+            return true;
+        }
+
+        isBound(context) {
+            return context.bindings.has(this.name);
+        }
+
+        // For pattern matching
+        matches(other, context) {
+            if (this.isBound(context)) {
+                const value = this.getValue(context);
+                if (other.isVariable() && other.isBound(context)) {
+                    return value === other.getValue(context);
+                }
+                return value === other;
+            }
+            // If unbound, bind to other value
+            return this.bind(other.isVariable() ? other.getValue(context) : other, context);
+        }
+
+        // Occurs check for unification
+        occursIn(term, context) {
+            if (term.isVariable()) {
+                if (term.name === this.name) return true;
+                if (term.isBound(context)) {
+                    return this.occursIn(term.getValue(context), context);
+                }
+                return false;
+            }
+            if (Array.isArray(term)) {
+                return term.some(t => this.occursIn(t, context));
+            }
+            return false;
+        }
+
+        // Deep copy for backtracking
+        clone() {
+            const newVar = new Variable(this.name);
+            newVar.constraints = new Set(this.constraints);
+            return newVar;
+        }
+
+        // Create constraint from predicate
+        constrain(predicate) {
+            this.addConstraint(value => predicate(value));
+            return this;
+        }
+
+        // Type constraints
+        constrainToType(type) {
+            return this.constrain(value => typeof value === type);
+        }
+
+        constrainToNumber() {
+            return this.constrainToType('number');
+        }
+
+        constrainToString() {
+            return this.constrainToType('string');
+        }
+
+        // Range constraints for numbers
+        constrainRange(min, max) {
+            return this.constrain(value => 
+                typeof value === 'number' && 
+                value >= min && 
+                value <= max
+            );
+        }
+
+        // List membership constraint
+        constrainToSet(allowedValues) {
+            const set = new Set(allowedValues);
+            return this.constrain(value => set.has(value));
+        }
+
+        // Custom validation
+        constrainWithValidation(validator) {
+            return this.constrain(validator);
+        }
+
+        toString() {
+            return `$${this.name}`;
+        }
+
+        // For debugging
+        inspect() {
+            return {
+                name: this.name,
+                binding: this.binding,
+                constraintCount: this.constraints.size
+            };
+        }
+    }
+
+    const createVariable = (name) => new Variable(name);
+
     // PrologScript.js - Main Library File
 
 
@@ -1691,6 +1875,7 @@
             this.rules = new Map();
             this.context = new UnificationContext();
             this.semanticRelations = new Map();
+            this.timeline = [];
             this._initializePredicates();
             this._initializeMathPredicates();
             this._initializeWavePredicates();
@@ -1958,21 +2143,21 @@
 
         _initializeMathPredicates() {
             // Arithmetic operations
-            this.predicate('sum', ($X, $Y, $Z) => {
+            this.predicate('computeSum', ($X, $Y, $Z) => {
                 const x = this._resolveValue($X);
                 const y = this._resolveValue($Y);
                 const z = this._resolveValue($Z);
                 return z === x + y;
             });
 
-            this.predicate('multiply', ($X, $Y, $Z) => {
+            this.predicate('computeMultiply', ($X, $Y, $Z) => {
                 const x = this._resolveValue($X);
                 const y = this._resolveValue($Y);
                 const z = this._resolveValue($Z);
                 return z === x * y;
             });
 
-            this.predicate('divide', ($X, $Y, $Z) => {
+            this.predicate('computeDivide', ($X, $Y, $Z) => {
                 const x = this._resolveValue($X);
                 const y = this._resolveValue($Y);
                 const z = this._resolveValue($Z);
@@ -1980,32 +2165,32 @@
             });
 
             // Comparison predicates
-            this.predicate('greaterThan', ($X, $Y) => {
+            this.predicate('computeGreaterThan', ($X, $Y) => {
                 const x = this._resolveValue($X);
                 const y = this._resolveValue($Y);
                 return x > y;
             });
 
-            this.predicate('lessThan', ($X, $Y) => {
+            this.predicate('computeLessThan', ($X, $Y) => {
                 const x = this._resolveValue($X);
                 const y = this._resolveValue($Y);
                 return x < y;
             });
 
             // Mathematical functions
-            this.predicate('square', ($X, $Y) => {
+            this.predicate('computeSquare', ($X, $Y) => {
                 const x = this._resolveValue($X);
                 const y = this._resolveValue($Y);
                 return y === x * x;
             });
 
-            this.predicate('sqrt', ($X, $Y) => {
+            this.predicate('computeSqrt', ($X, $Y) => {
                 const x = this._resolveValue($X);
                 const y = this._resolveValue($Y);
                 return x >= 0 && y === Math.sqrt(x);
             });
 
-            this.predicate('power', ($X, $Y, $Z) => {
+            this.predicate('computePower', ($X, $Y, $Z) => {
                 const x = this._resolveValue($X);
                 const y = this._resolveValue($Y);
                 const z = this._resolveValue($Z);
@@ -2013,7 +2198,7 @@
             });
 
             // Modulo operation
-            this.predicate('mod', ($X, $Y, $Z) => {
+            this.predicate('computeMod', ($X, $Y, $Z) => {
                 const x = this._resolveValue($X);
                 const y = this._resolveValue($Y);
                 const z = this._resolveValue($Z);
@@ -2021,7 +2206,7 @@
             });
 
             // Range constraints
-            this.predicate('between', ($X, $Min, $Max) => {
+            this.predicate('computeBetween', ($X, $Min, $Max) => {
                 const x = this._resolveValue($X);
                 const min = this._resolveValue($Min);
                 const max = this._resolveValue($Max);
@@ -2228,6 +2413,12 @@
             return new Counterfactual(this.activeReality, name);
         }
 
+        // Add temporal state
+        addTimeStep(timestamp, states) {
+            this.timeline.push(new TimeStep(timestamp, states));
+            this.timeline.sort((a, b) => a.timestamp - b.timestamp);
+        }
+
         addSemanticRelation(term1, term2) {
             // Get or create set for term1
             if (!this.semanticRelations.has(term1)) {
@@ -2286,11 +2477,16 @@
         // Add constraint to variable
         addConstraint(varName, operator, value) {
             const constraint = new MathConstraint(operator, value);
-            this.rules.forEach(rule => {
-                if (rule.variables.has(varName)) {
-                    rule.variables.get(varName).addConstraint(value => constraint.evaluate(value));
-                }
-            });
+            // Try to get the variable instance from the context.
+            let variable = this.context.bindings.get(varName);
+            if (!variable || !(variable instanceof Variable)) {
+                // If no Variable instance exists, create one and add it to the context.
+                variable = createVariable(varName);
+                this.context.bindings.set(varName, variable);
+            }
+            // Add the constraint to the variable.
+            variable.addConstraint(x => constraint.evaluate(x));
+            return true;
         }
 
         // Add mathematical rule
@@ -2718,6 +2914,8 @@
         }
 
         _evaluateGoal(goal, args) {
+            console.log('\n_evaluateGoal:', { goal, args });
+
             // Check for predicate as method
             if (typeof this[goal] === 'function') {
                 return this[goal](...args);
@@ -2728,17 +2926,37 @@
                 .filter(([head]) => this._matchesRule(goal, args, head));
 
             if (rules.length > 0) {
-                this.context.addChoicePoint(rules.map(([head, body]) => ({
-                    goal: body,
-                    args: this._substituteArgs(args, head)
-                })));
-                
-                const [, body] = rules[0];
-                return this._evaluateRuleBody(body, args, goal);  // Pass original goal
+                // Try each rule
+                for (const [head, body] of rules) {
+                    console.log('\nTrying rule:', head, 'with body:', body);
+                    
+                    const bindings = this._substituteArgs(args, head);
+                    console.log('Initial bindings:', Array.from(bindings.entries()));
+
+                    // If it's a multi-condition rule
+                    if (Array.isArray(body)) {
+                        // Get first condition result and its bindings
+                        const [firstCondition, ...restConditions] = body;
+                        console.log('Evaluating first condition:', firstCondition);
+                        
+                        if (this._evaluateRuleBody([firstCondition], bindings, goal)) {
+                            console.log('First condition succeeded, bindings:', Array.from(bindings.entries()));
+                            
+                            // Use those bindings for next conditions
+                            if (this._evaluateRuleBody(restConditions, bindings, goal)) {
+                                return true;
+                            }
+                        }
+                    } else {
+                        if (this._evaluateRuleBody([body], bindings, goal)) {
+                            return true;
+                        }
+                    }
+                }
             }
 
             return false;
-            }
+        }
 
         _substituteArgs(queryArgs, ruleHead) {
             const headParts = ruleHead.split(':');  // ['mortal', '$X']
@@ -2768,47 +2986,108 @@
         }
 
         _evaluateRuleBody(conditions, args, queryTerm) {  // Accept queryTerm parameter
-            const bindings = (args instanceof Map) ? args : 
-                        this._substituteArgs(args, conditions[0]);
-        
+            const bindings = (args instanceof Map) ? args : this._substituteArgs(args, conditions[0]);
+
+            // Merge the local bindings into the overall context so that condition functions see them.
+            const context = this.context;
+            bindings.forEach((value, key) => {
+                if (!(typeof value === 'string') || !value.startsWith('$')) {
+                    context.bindings.set(key, value);
+                }
+                else if (!context.bindings.has(key))
+                {
+                    context.bindings.set(key, value);
+                }
+            });
+
+            console.log('\n_evaluateRuleBody:', {
+                conditions,
+                bindings: Array.from(bindings.entries()),
+                queryTerm
+            });
+
             return conditions.every(condition => {
+                console.log('\nEvaluating condition:', condition);
                 if (typeof condition === 'function') {
                     return condition(context);
                 }
                 
                 const substitutedCondition = this._substituteVariables(condition, bindings);
+                console.log('After variable substitution:', substitutedCondition);
+
                 const parts = substitutedCondition.split(':');
-        
-                console.log('Evaluating condition:', substitutedCondition);
                 console.log('Parts:', parts);
-                console.log('Original query term:', queryTerm);  // Debug
-        
+                console.log('Original query term:', queryTerm);
+
                 // For isA predicates
                 if (parts[0] === 'isA') {
                     const key = `isA:${parts[2]}`;
                     const set = this.knowledgeBase.get(key);
                     return set && set.has(parts[1]);
                 }
-        
+
                 // For hasA predicates
                 if (parts[0] === 'hasA') {
-                    for (const [existingKey, value] of this.knowledgeBase) {
-                        const keyParts = existingKey.split(':');
-                        if (keyParts[0] === 'hasA' && 
-                            keyParts[1] === parts[1] && 
-                            this.areSemanticallySimilar(parts[2], queryTerm)) {
-                            // Convert string 'true'/'false' to boolean if needed
-                            const expectedValue = parts[3] === 'true' ? true : 
-                                               parts[3] === 'false' ? false : 
-                                               parts[3];
-                            return value === expectedValue;
+                    const entity = parts[1];
+                    const requestedProp = parts[2];
+                    const expectedValue = parts[3];
+
+                    // First, try a direct lookup.
+                    let key = `hasA:${entity}:${requestedProp}`;
+                    console.log('Looking up fact:', key);
+                    let value = this.knowledgeBase.get(key);
+                    console.log('Direct lookup value:', value);
+
+                    // If not found, search through all properties for the entity.
+                    if (value === undefined) {
+                        const prefix = `hasA:${entity}:`;
+                        for (const factKey of this.knowledgeBase.keys()) {
+                            if (factKey.startsWith(prefix)) {
+                                const storedProp = factKey.split(':')[2];
+                                if (this.areSemanticallySimilar(storedProp, requestedProp)) {
+                                    value = this.knowledgeBase.get(factKey);
+                                    console.log(`Found semantically similar fact: ${factKey} ->`, value);
+                                    break;
+                                }
+                            }
                         }
                     }
+                    
+                    console.log('Final value to compare:', value);
+                    if (value !== undefined) {
+                        // If the value is a boolean, compare against the expected boolean.
+                        if (typeof value === 'boolean') {
+                            if (expectedValue && !expectedValue.startsWith('$')) {
+                                return value === (expectedValue === 'true');
+                            }
+                            return true;
+                        }
+                        // For non-boolean values, if we're looking for a specific value, compare them.
+                        if (expectedValue && !expectedValue.startsWith('$')) {
+                            return this.areSemanticallySimilar(value, expectedValue);
+                        }
+                        // If we have a variable in the expected position, bind it.
+                        if (expectedValue && expectedValue.startsWith('$')) {
+                            const varName = expectedValue.slice(1);
+                            bindings.set(varName, value);
+                            return true;
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+
+                // Handle recursive ancestor query
+                if (parts[0] === 'ancestor') {
+                    console.log('Recursive ancestor query:', parts);
+                    const recursiveResult = this.query(...parts);
+                    console.log('Recursive result:', recursiveResult);
+                    return recursiveResult;
                 }
 
                 return false;
             });
-        }
+        }    
 
         _substituteVariables(pattern, bindings) {
             console.log('Pattern:', pattern);
@@ -2836,6 +3115,7 @@
         }
 
         _bindVariable(variable, value) {
+
             // Case 1: Variable is a Term instance
             if (variable instanceof Term) {
                 if (this._occursCheck(variable, value)) return false;
